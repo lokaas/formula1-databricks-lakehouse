@@ -1,4 +1,5 @@
-Formula 1 Lakehouse on Azure Databricks
+# Formula 1 Lakehouse on Azure Databricks
+
 An end-to-end Lakehouse project built on Azure Databricks + Unity Catalog, using the Medallion Architecture (Landing → Bronze → Silver → Gold) to transform raw Formula 1 racing data into analytics-ready dimensional models — with two implementations: a full refresh pipeline and a batch-driven incremental load pipeline with job orchestration.
 Architecture
 ```
