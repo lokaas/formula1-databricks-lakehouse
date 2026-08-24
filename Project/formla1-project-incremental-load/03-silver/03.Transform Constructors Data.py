@@ -1,0 +1,146 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC #  Transform Constructors Data 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC  1. Read bronze Constructors table
+# MAGIC  2. Keep only the columns required for analytics (Drop url column)
+# MAGIC  3. Standardise column names using snake_case ( constructorsID --> constructors_id )
+# MAGIC  4. Rename columns to make them more meaningful ( name --> constructors_name )
+# MAGIC  5. Remove duplicate records
+# MAGIC  6. Transform values of column nationality to Title Case
+# MAGIC  7. Write the transformed data to silver races table
+# MAGIC
+# MAGIC  Below changes are required to implement Incremental Load Prqcessing
+# MAGIC ory
+# MAGIC 1. Accept batch_id as a parameter to the notebook 
+# MAGIC 2. Process data for only the batch_id being passed in (i.e., filter reading from bronze using the batch_id)
+# MAGIC 3. Add created_timestamp, updated_timestamp and batch_id to the silver table 
+# MAGIC 4. Merge the processed data to the silver table created_timestamp should only be populated at the time of inserting/ creating the record. It should not be updated during the merge update. Ensure that we are not overwriting the data in silver table by older bronze data (re-run scenario)
+
+# COMMAND ----------
+
+dbutils.widgets.text("p_batch_id","")
+v_batch_id = dbutils.widgets.get("p_batch_id")
+
+# COMMAND ----------
+
+# MAGIC %run ../00-common/01.environment-config
+
+# COMMAND ----------
+
+# MAGIC %run ../00-common/03.silver_helpers
+
+# COMMAND ----------
+
+bronze_table = f"{catalog_name}.{bronze_schema}.constructors"
+silver_table = f"{catalog_name}.{silver_schema}.constructors"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 1 - Read bronze races table
+
+# COMMAND ----------
+
+from pyspark.sql import functions as F
+
+# COMMAND ----------
+
+constructors_df=spark.read.table(bronze_table).filter(F.col("batch_id") == v_batch_id)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 2 - Keep only the columns required for analytics (Drop url column)
+
+# COMMAND ----------
+
+constructors_dropped_df=constructors_df.drop("url")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 3 & 4 - Standardise Column Names
+# MAGIC - Standardise column names using snake_case ( raceName --> race_name , circuitId --> circuit_id )
+# MAGIC - Rename columns to make them more meaningful ( date --> race_date )
+
+# COMMAND ----------
+
+# DBTITLE 1,Cell 11
+constructors_renamed_df=(
+    constructors_dropped_df
+        .withColumnRenamed("constructorId", "constructor_id")
+        .withColumnRenamed("Name", "constructor_name")
+)
+
+# COMMAND ----------
+
+display(constructors_renamed_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 5 - Remove duplicate records
+
+# COMMAND ----------
+
+constructors_distinct_df = constructors_renamed_df.dropDuplicates(['constructor_id'])
+
+
+# COMMAND ----------
+
+display(constructors_distinct_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 6 - Transform values of column nationality to Title Case
+
+# COMMAND ----------
+
+constructors_final_df=(
+    constructors_distinct_df
+        .withColumn('nationality',F.initcap(F.col("nationality")))
+)
+
+# COMMAND ----------
+
+display(constructors_final_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Step 7 - Write the transformed data to silver races table
+
+# COMMAND ----------
+
+# (
+#     constructors_final_df
+#         .write
+#         .format("delta")
+#         .mode("overwrite")
+#         .saveAsTable(silver_table)
+# )
+
+# COMMAND ----------
+
+write_to_silver(
+    input_df=constructors_final_df,
+    target_table=silver_table,
+    merge_condition="t.constructor_id = s.constructor_id",
+    columns_to_update=[
+        "constructor_id",
+        "constructor_name",
+        "nationality",
+        "ingestion_timestamp",
+        "source_file",
+        "batch_id"
+    ]
+)
+
+# COMMAND ----------
+
+display(spark.table(silver_table))
